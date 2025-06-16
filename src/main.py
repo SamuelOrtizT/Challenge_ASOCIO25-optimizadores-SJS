@@ -20,8 +20,12 @@ with open(ruta_json, 'r') as archivo:
 empleados = datos["Employees"]
 escritorios = datos["Desks"]
 dias = datos["Days"]
-empleadosXdias = dict(datos['Days_E'].items())
+grupos = datos["Groups"]
+zonas = datos["Zones"]
+escritoriosXzonas = dict(datos["Desks_Z"].items())
 escritoriosXempleados = dict(datos['Desks_E'].items())
+gruposXempleados = dict(datos["Employees_G"].items())
+empleadosXdias = dict(datos['Days_E'].items())
 
 #Inicializar modelo
 M = -99999
@@ -43,13 +47,30 @@ C = {
     for dia in dias
 }
 
+#definir función objetivo
 def funcion_objetivo(m):
     return sum(C[(i, j, k)] * m.x[i, j, k] for i in m.I for j in m.J for k in m.K)
 
 model.obj = Objective(rule=funcion_objetivo, sense=maximize)
-print(check_available_solvers())
-"""
+
+#restricciones
+def un_escritorio_por_dia(m, i, k):
+    return sum(m.x[i, j, k] for j in m.J) <= 1
+model.restriccion_asignacion = Constraint(model.I, model.K, rule=un_escritorio_por_dia)
+
+
 # Resolver con glpk
-solver = SolverFactory('glpk')
+glpsol_path = os.path.join(os.path.dirname(__file__), "solvers", "glpsol.exe")  # Ruta al ejecutable dentro del proyecto
+
+solver = SolverFactory("glpk", executable=glpsol_path)
 result = solver.solve(model, tee=False)
-"""
+
+print(f"Estado de la solución: {result.solver.status}")
+print(f"Resultado objetivo: {value(model.obj)}")
+
+# Mostrar asignaciones
+for i in model.I:
+    for j in model.J:
+        for k in model.K:
+            if value(model.x[i, j, k]) == 1:
+                print(f"Empleado E{i} asignado al escritorio D{j} el día {k}")
