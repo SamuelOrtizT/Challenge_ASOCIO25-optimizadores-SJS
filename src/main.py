@@ -12,12 +12,14 @@ text3 = "Ingrese el peso que desea darle a que los empleados usen el mismo escri
 text4 = "Ingrese el peso que desea darle a que los empleados trabajen en el menor número de zonas: "
 text5 = "Ingrese el peso que desea darle a que los empleados no queden aislados si el grupo de trabajo se reparte en distintas zonas: "
 text6 = "Ingrese el tiempo límite en segundos para que el solver intente encontrar la mejor solución: "
+text7 = "Ingrese que tanto puede la solución obtenida desviarse de la solución óptima (número en porcentaje %): "
 num_instance = int(input(text1))
 peso_dia_preferido = float(input(text2).replace(",", "."))
 peso_mismo_escritorio = float(input(text3).replace(",", "."))
 peso_zonas = float(input(text4).replace(",", "."))
 peso_aislado = float(input(text5).replace(",", "."))
 tiempo_limite = int(float((input(text6).replace(",", "."))))
+gap = int(float((input(text7).replace(",", "."))))
 
 #leer el json con los datos
 ruta_json = os.path.join(".", "data", f"instance{num_instance}.json")
@@ -150,11 +152,11 @@ for grupo, empleados in gruposXempleados.items():
         else:
             model.restriccion_conteo_miembros.add(model.miembros_en_zona[grupo, zona] == 0)
 
-# Resolver con glpk
-glpsol_path = os.path.join(os.path.dirname(__file__), "solvers", "glpsol.exe")  # Ruta al ejecutable dentro del proyecto
+# Resolver con cbc
+cbc_path = os.path.join(os.path.dirname(__file__), "solvers", "cbc.exe")  # Ruta al ejecutable dentro del proyecto
 
-solver = SolverFactory("glpk", executable=glpsol_path)
-result = solver.solve(model, tee=True, options={'tmlim': tiempo_limite, 'mipgap': 0.05})
+solver = SolverFactory("cbc", executable=cbc_path)
+result = solver.solve(model, tee=True, options={'seconds': tiempo_limite, 'ratio': gap / 100})
 
 print(f"Estado de la solución: {result.solver.status}")
 print(f"Resultado objetivo: {value(model.obj)}")
