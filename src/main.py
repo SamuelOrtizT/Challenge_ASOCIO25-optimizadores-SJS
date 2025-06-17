@@ -9,11 +9,15 @@ from pyomo.environ import *
 text1 = "Ingrese el número del JSON que desea usar: "
 text2 = "Ingrese el peso que desea darle a que los empleados asistan en sus días preferidos: "
 text3 = "Ingrese el peso que desea darle a que los empleados usen el mismo escritorio todos los días que haga presencialidad: "
-text4 = "Ingrese el tiempo límite en segundos para que el solver intente encontrar la mejor solución: "
+text4 = "Ingrese el peso que desea darle a que los empleados trabajen en el menor número de zonas: "
+text5 = "Ingrese el peso que desea darle a que los empleados no queden aislados si el grupo de trabajo se reparte en distintas zonas: "
+text6 = "Ingrese el tiempo límite en segundos para que el solver intente encontrar la mejor solución: "
 num_instance = int(input(text1))
 peso_dia_preferido = float(input(text2).replace(",", "."))
 peso_mismo_escritorio = float(input(text3).replace(",", "."))
-tiempo_limite = int(float((input(text4).replace(",", "."))))
+peso_zonas = float(input(text4).replace(",", "."))
+peso_aislado = float(input(text5).replace(",", "."))
+tiempo_limite = int(float((input(text6).replace(",", "."))))
 
 #leer el json con los datos
 ruta_json = os.path.join(".", "data", f"instance{num_instance}.json")
@@ -25,10 +29,15 @@ escritorios = datos["Desks"]
 dias = datos["Days"]
 grupos = datos["Groups"]
 zonas = datos["Zones"]
-escritoriosXzonas = dict(datos["Desks_Z"].items())
+zonasXescritorios = dict(datos["Desks_Z"].items())
 escritoriosXempleados = dict(datos['Desks_E'].items())
 gruposXempleados = dict(datos["Employees_G"].items())
 empleadosXdias = dict(datos['Days_E'].items())
+escritorioXzona = {
+    esc: zona
+    for zona, escritorios in zonasXescritorios.items()
+    for esc in escritorios
+}
 
 #Inicializar modelo
 M = -99999
@@ -36,8 +45,14 @@ model = ConcreteModel()
 model.I = RangeSet(0, len(empleados) - 1)
 model.J = RangeSet(0, len(escritorios) - 1)
 model.K = Set(initialize=dias)
+model.G = Set(initialize=grupos)
 model.x = Var(model.I, model.J, model.K, within=Binary)
 model.y = Var([(i, j) for i in model.I for j in model.J if f"D{j}" in escritoriosXempleados[f"E{i}"]], domain=Binary)
+model.g = Var(model.G, model.K, domain=Binary)
+model.Z = Set(initialize=zonas)
+model.z = Var(model.G, model.Z, domain=Binary)
+model.miembros_en_zona = Var(model.G, model.Z, within=NonNegativeIntegers)
+model.aislado = Var(model.G, model.Z, domain=Binary)
 
 #Llenar diccionario con el peso de cada variable de decisión
 C = {
@@ -55,7 +70,9 @@ C = {
 def funcion_objetivo(m):
     asignacion = sum(C[(i, j, k)] * m.x[i, j, k] for i in m.I for j in m.J for k in m.K)
     consistencia_escritorios = sum(m.y[i, j] for (i, j) in m.y.index_set())
-    return asignacion - peso_mismo_escritorio * consistencia_escritorios
+    penalizacion_por_zonas = sum(m.z[g, z] for g in m.G for z in m.Z)
+    penalizacion_aislamiento = sum(model.aislado[g, z] for g in model.G for z in model.Z)
+    return asignacion - peso_mismo_escritorio * consistencia_escritorios - peso_zonas * penalizacion_por_zonas - peso_aislado * penalizacion_aislamiento
 
 model.obj = Objective(rule=funcion_objetivo, sense=maximize)
 
@@ -75,17 +92,69 @@ def activar_y(m, i, j, k):
         return m.x[i, j, k] <= m.y[i, j]
     return Constraint.Skip
 
+def un_dia_por_grupo(m, grupo):
+    return sum(m.g[grupo, k] for k in m.K) == 1
+
+model.restriccion_grupo_un_dia = Constraint(model.G, rule=un_dia_por_grupo)
 model.restriccion_activar_y = Constraint(model.I, model.J, model.K, rule=activar_y)
 model.restriccion_asignacion = Constraint(model.I, model.K, rule=un_escritorio_por_dia)
 model.restriccion_ocupacion = Constraint(model.J, model.K, rule=un_empleado_por_escritorio)
 model.restriccion_dias_min_max = Constraint(model.I, rule=dias_trabajados_por_empleado)
+model.restriccion_asistencia_grupal = ConstraintList()
+model.restriccion_zona_usada = ConstraintList()
+model.restriccion_conteo_miembros = ConstraintList()
+model.restriccion_aislamiento = ConstraintList()
 
+for g in model.G:
+    for z in model.Z:
+        model.restriccion_aislamiento.add(model.miembros_en_zona[g, z] >= model.aislado[g, z])
+        model.restriccion_aislamiento.add(model.miembros_en_zona[g, z] <= model.aislado[g, z] + (len(gruposXempleados[g]) - 1)*(1 - model.aislado[g, z]))
+
+
+for grupo, empleados in gruposXempleados.items():
+    for k in model.K:
+        for e in empleados:
+            i = int(e[1:])  # "E0" → 0
+            model.restriccion_asistencia_grupal.add(
+                sum(model.x[i, j, k] for j in model.J if f"D{j}" in escritoriosXempleados[f"E{i}"]) >= model.g[grupo, k]
+            )
+
+for grupo, empleados in gruposXempleados.items():
+    for e in empleados:
+        i = int(e[1:])
+        escritorios_validos = escritoriosXempleados[f"E{i}"]
+        for esc in escritorios_validos:
+            j = int(esc[1:])
+            zona = escritorioXzona[esc]
+            for k in model.K:
+                model.restriccion_zona_usada.add(
+                    model.x[i, j, k] <= model.z[grupo, zona]
+                )
+
+for grupo, empleados in gruposXempleados.items():
+    for zona in model.Z:
+        sum_terms = []
+        for e in empleados:
+            i = int(e[1:])
+            valid_escritorios = escritoriosXempleados.get(f"E{i}", [])
+            for esc in valid_escritorios:
+                if escritorioXzona[esc] != zona:
+                    continue  # ignorar escritorios fuera de esta zona
+                j = int(esc[1:])
+                for k in model.K:
+                    sum_terms.append(model.x[i, j, k])
+        if sum_terms:
+            model.restriccion_conteo_miembros.add(
+                model.miembros_en_zona[grupo, zona] == sum(sum_terms)
+            )
+        else:
+            model.restriccion_conteo_miembros.add(model.miembros_en_zona[grupo, zona] == 0)
 
 # Resolver con glpk
 glpsol_path = os.path.join(os.path.dirname(__file__), "solvers", "glpsol.exe")  # Ruta al ejecutable dentro del proyecto
 
 solver = SolverFactory("glpk", executable=glpsol_path)
-result = solver.solve(model, tee=False, options={'tmlim': tiempo_limite})
+result = solver.solve(model, tee=True, options={'tmlim': tiempo_limite, 'mipgap': 0.05})
 
 print(f"Estado de la solución: {result.solver.status}")
 print(f"Resultado objetivo: {value(model.obj)}")
