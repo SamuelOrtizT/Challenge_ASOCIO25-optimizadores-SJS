@@ -1,6 +1,5 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from PIL import Image, ImageTk
 import os
 import json
 from pyomo.environ import *
@@ -13,20 +12,32 @@ class SchedulerApp:
 
     def create_first_window(self):
         self.clear_window()
-        tk.Label(self.root, text="Presentación del equipo", font=("Helvetica", 16)).pack(pady=10)
+        tk.Label(self.root, text="Bienvenidos a la aplicación de optimización de horarios", font=("Helvetica", 16, "bold")).pack(pady=10)
 
-        integrantes = [("Juan Sebastián Hoyos Castillo", "foto1.png"), ("Samuel Ortiz Toro", "foto2.png"), ("Jhon Edison Pinto Hincapié", "foto3.png")]
-        for nombre, foto in integrantes:
-            frame = tk.Frame(self.root)
-            frame.pack()
-            try:
-                imagen = Image.open(foto).resize((80, 80))
-                img = ImageTk.PhotoImage(imagen)
-                tk.Label(frame, image=img).pack(side="left", padx=5)
-                tk.Label(frame, text=nombre, font=("Helvetica", 12)).pack(side="left")
-                frame.image = img
-            except:
-                tk.Label(frame, text=f"{nombre} (sin foto)").pack()
+        descripcion = (
+            "Esta aplicación ha sido desarrollada por Juan Sebastián Hoyos Castillo, Samuel Ortiz Toro y Jhon Edison Pinto Hincapié, "
+            "bajo el nombre del equipo 'Optimizadores SJS'.\n\n"
+            "El propósito principal de esta herramienta es asignar de manera óptima los escritorios que serán utilizados por un grupo de empleados "
+            "durante los días en que deben asistir presencialmente a su lugar de trabajo.\n\n"
+            "Para ello, la aplicación considera distintas preferencias y restricciones, tales como los días preferidos por cada empleado, "
+            "la permanencia en un mismo escritorio, la distribución en zonas específicas, y la cercanía con su grupo de trabajo.\n\n"
+            "Los datos necesarios para ejecutar el modelo deben estar contenidos en archivos JSON ubicados dentro de la carpeta 'data', "
+            "la cual debe encontrarse en el mismo directorio que esta aplicación. Estos archivos deben incluir información sobre empleados, escritorios, zonas, días, "
+            "preferencias, grupos de trabajo y escritorios asignados a cada empleado."
+        )
+
+        frame = tk.Frame(self.root)
+        frame.pack(padx=20, pady=10, fill="y", expand=True)
+
+        text_widget = tk.Text(frame, wrap="word", height=10)
+        text_widget.insert("1.0", descripcion)
+        text_widget.see("end")
+        text_widget.config(state="disabled")
+
+        scrollbar = tk.Scrollbar(frame, command=text_widget.yview)
+        text_widget.config(yscrollcommand=scrollbar.set)
+
+        text_widget.pack(side="left", fill="both", expand=False)
 
         tk.Button(self.root, text="Ingresar al sistema", command=self.create_second_window).pack(pady=20)
 
@@ -44,14 +55,31 @@ class SchedulerApp:
             "Desviación del óptimo (%):"
         ]
 
+        tooltips = [
+            "Favorece que los empleados trabajen los días que prefieren.",
+            "Favorece que un empleado conserve el mismo escritorio.",
+            "Favorece que un empleado trabaje en menos zonas.",
+            "Evita que un empleado quede aislado de su grupo.",
+            "Tiempo máximo para resolver el modelo.",
+            "Permite soluciones aproximadas para ganar velocidad."
+        ]
+
         self.inputs = []
+        self.check_vars = []
         self.valid = [False] * len(labels)
 
-        # Combobox para selección del número de instancia
-        tk.Label(self.root, text="Seleccione la instancia JSON:").pack()
+        tk.Label(
+            self.root,
+            text="Deshabilitar restricciones puede afectar el tiempo de ejecución y la calidad de la solución.",
+            fg="red"
+        ).pack(pady=5)
+
+        frame_combo = tk.Frame(self.root)
+        frame_combo.pack(pady=5, anchor="w")
+        tk.Label(frame_combo, text="Seleccione la instancia JSON:").grid(row=0, column=0, padx=5)
         self.json_var = tk.StringVar()
-        self.json_combobox = ttk.Combobox(self.root, textvariable=self.json_var, state="readonly")
-        self.json_combobox.pack(pady=5)
+        self.json_combobox = ttk.Combobox(frame_combo, textvariable=self.json_var, state="readonly")
+        self.json_combobox.grid(row=0, column=1, padx=5)
 
         archivos_json = [f for f in os.listdir("./data") if f.startswith("instance") and f.endswith(".json")]
         numeros_instancia = sorted([
@@ -67,32 +95,47 @@ class SchedulerApp:
 
         self.json_var.trace_add("write", validate_json_selection)
 
-        # Entradas restantes
         for i, label in enumerate(labels):
             frame = tk.Frame(self.root)
-            frame.pack(pady=3)
-            tk.Label(frame, text=label).pack(side="left")
+            frame.pack(pady=3, anchor="w")
+
+            lbl = tk.Label(frame, text=label, width=30, anchor="w")
+            lbl.grid(row=0, column=0, padx=5)
+
             var = tk.StringVar()
-            entry = tk.Entry(frame, textvariable=var)
-            entry.pack(side="left")
+            entry = tk.Entry(frame, textvariable=var, width=10)
+            entry.grid(row=0, column=1, padx=5)
+
+            btn = tk.Button(frame, text="?", width=2, command=lambda i=i: messagebox.showinfo("Explicación", tooltips[i]))
+            btn.grid(row=0, column=2, padx=5)
+
+            var_chk = tk.IntVar()
+            if i > 0:
+                chk = tk.Checkbutton(frame, text="Omitir", variable=var_chk, command=self.check_validity)
+                chk.grid(row=0, column=3, padx=5)
+            self.check_vars.append(var_chk)
+
+            self.inputs.append(var)
 
             def validate(i=i, v=var):
                 def inner(*args):
                     try:
                         val = float(v.get().replace(",", "."))
-                        self.valid[i] = val >= 0
+                        self.valid[i] = val >= 0 or (i != 1 and self.check_vars[i - 1].get())
                     except:
-                        self.valid[i] = False
+                        self.valid[i] = (i != 1 and self.check_vars[i - 1].get())
                     self.check_validity()
                 return inner
 
             var.trace_add("write", validate())
-            self.inputs.append(var)
 
         self.execute_button = tk.Button(self.root, text="Ejecutar modelo", command=self.run_model, state="disabled")
         self.execute_button.pack(pady=20)
 
     def check_validity(self):
+        for i in range(1, len(self.valid)):
+            if i != 1 and self.check_vars[i - 1].get():
+                self.valid[i] = True
         if all(self.valid):
             self.execute_button.config(state="normal")
         else:
@@ -212,8 +255,7 @@ class SchedulerApp:
             cbc_path = os.path.join(os.path.dirname(__file__), "solvers", "cbc.exe")
             solver = SolverFactory("cbc", executable=cbc_path)
             result = solver.solve(model, tee=False, options={'seconds': tiempo_limite, 'ratio': gap / 100})
-
-            self.create_third_window(model, result)
+            self.create_third_window(model,result)
 
         except Exception as e:
             messagebox.showerror("Error en la ejecución", str(e))
@@ -222,33 +264,60 @@ class SchedulerApp:
         self.clear_window()
         tk.Label(self.root, text="Resultados del modelo", font=("Helvetica", 14)).pack(pady=10)
 
-        output = f"Estado: {result.solver.status}\n"
-        output += f"Valor objetivo: {value(model.obj)}\n\nAsignaciones:\n"
+        self.sort_var = tk.StringVar(value="Empleado")
+        options = ["Empleado", "Día", "Escritorio"]
+        tk.Label(self.root, text="Ordenar por:").pack()
+        sort_menu = ttk.Combobox(self.root, textvariable=self.sort_var, values=options, state="readonly")
+        sort_menu.pack(pady=5)
+        sort_menu.bind("<<ComboboxSelected>>", lambda e: self.show_results())
+
+        frame = tk.Frame(self.root)
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.result_area = tk.Text(frame, wrap="word")
+        scrollbar = tk.Scrollbar(frame, command=self.result_area.yview)
+        self.result_area.configure(yscrollcommand=scrollbar.set)
+        self.result_area.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
         asignaciones = []
         for i in model.I:
             for j in model.J:
                 for k in model.K:
                     if value(model.x[i, j, k]) == 1:
-                        asignaciones.append(f"Empleado E{i} → Escritorio D{j} el día {k}")
+                        asignaciones.append((f"E{i}", f"D{j}", k))
 
-        output += "\n".join(asignaciones)
-
-        # Contenedor para Text con scrollbar
-        frame = tk.Frame(self.root)
-        frame.pack(expand=True, fill="both", padx=10, pady=10)
-
-        text_area = tk.Text(frame, wrap="word", height=25, width=80)
-        scrollbar = tk.Scrollbar(frame, command=text_area.yview)
-        text_area.configure(yscrollcommand=scrollbar.set)
-
-        text_area.insert("1.0", output)
-        text_area.config(state="disabled")
-
-        text_area.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        self.resultados = asignaciones
+        self.show_results()
 
         tk.Button(self.root, text="Volver al inicio", command=self.create_first_window).pack(pady=10)
+
+    def show_results(self):
+        criterio = self.sort_var.get()
+
+        orden_dias = {"L": 0, "Ma": 1, "Mi": 2, "J": 3, "V": 4}
+        def extraer_numero(texto):
+            return int(''.join(filter(str.isdigit, texto)))
+
+        orden = {
+            "Empleado": lambda x: extraer_numero(x[0]),
+            "Escritorio": lambda x: extraer_numero(x[1]),
+            "Día": lambda x: orden_dias.get(x[2], 99)
+        }
+
+        try:
+            sorted_result = sorted(self.resultados, key=orden[criterio])
+        except Exception as e:
+            messagebox.showerror("Error", f"Error ordenando resultados: {e}")
+            return
+
+        self.result_area.config(state="normal")
+        self.result_area.delete("1.0", "end")
+
+        for emp, desk, day in sorted_result:
+            self.result_area.insert("end", f"Empleado {emp} → Escritorio {desk} el día {day}\n")
+
+        self.result_area.config(state="disabled")
 
     def clear_window(self):
         for widget in self.root.winfo_children():
@@ -256,6 +325,6 @@ class SchedulerApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.geometry("600x700")
+    root.geometry("700x450")
     app = SchedulerApp(root)
     root.mainloop()
