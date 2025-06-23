@@ -12,32 +12,28 @@ class SchedulerApp:
 
     def create_first_window(self):
         self.clear_window()
-        tk.Label(self.root, text="Bienvenidos a la aplicación de optimización de horarios", font=("Helvetica", 16, "bold")).pack(pady=10)
+        tk.Label(self.root, text="Bienvenido a la aplicación de optimización de horarios", font=("Helvetica", 16, "bold")).pack(pady=10)
 
-        descripcion = (
-            "Esta aplicación ha sido desarrollada por Juan Sebastián Hoyos Castillo, Samuel Ortiz Toro y Jhon Edison Pinto Hincapié, "
-            "bajo el nombre del equipo 'Optimizadores SJS'.\n\n"
-            "El propósito principal de esta herramienta es asignar de manera óptima los escritorios que serán utilizados por un grupo de empleados "
-            "durante los días en que deben asistir presencialmente a su lugar de trabajo.\n\n"
-            "Para ello, la aplicación considera distintas preferencias y restricciones, tales como los días preferidos por cada empleado, "
-            "la permanencia en un mismo escritorio, la distribución en zonas específicas, y la cercanía con su grupo de trabajo.\n\n"
-            "Los datos necesarios para ejecutar el modelo deben estar contenidos en archivos JSON ubicados dentro de la carpeta 'data', "
-            "la cual debe encontrarse en el mismo directorio que esta aplicación. Estos archivos deben incluir información sobre empleados, escritorios, zonas, días, "
-            "preferencias, grupos de trabajo y escritorios asignados a cada empleado."
-        )
+        descripcion = ("Esta aplicación ha sido desarrollada para la participación del reto ASOCIO 2025 por Juan Sebastián Hoyos Castillo, Samuel Ortiz Toro "
+            "y Jhon Edison Pinto Hincapié, bajo el nombre del equipo 'Optimizadores SJS'.\n\nEl propósito principal de esta aplicación es asignar de la mejor " 
+            "manera posible los escritorios que serán utilizados por un grupo de empleados durante los días en que deben hacer presencialidad en su lugar de " 
+            "trabajo.\n\nPara ello, la aplicación considera distintas preferencias y restricciones, tales como los días preferidos para hacer presencialidad " 
+            "por cada empleado, el uso de un mismo escritorio toda la semana, y la distribución de los equipos de trabajo en diferentes zonas.\n\nEn la carpeta "
+            "'data' ubicada en el mismo directorio que esta aplicación hay ejemplos en formato JSON de problemas a resolver. Para optimizar un nuevo problema, "
+            "añada un nuevo JSON en la carpeta 'data' con la información correspondiente, titulandolo 'instanceXX' siendo XX el número del problema a resolver.")
 
         frame = tk.Frame(self.root)
-        frame.pack(padx=20, pady=10, fill="y", expand=True)
+        frame.pack(padx=20, pady=10, fill="both", expand=True)
 
         text_widget = tk.Text(frame, wrap="word", height=10)
         text_widget.insert("1.0", descripcion)
-        text_widget.see("end")
         text_widget.config(state="disabled")
 
         scrollbar = tk.Scrollbar(frame, command=text_widget.yview)
         text_widget.config(yscrollcommand=scrollbar.set)
 
-        text_widget.pack(side="left", fill="both", expand=False)
+        text_widget.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
         tk.Button(self.root, text="Ingresar al sistema", command=self.create_second_window).pack(pady=20)
 
@@ -46,22 +42,15 @@ class SchedulerApp:
         tk.Label(self.root, text="Parámetros del modelo", font=("Helvetica", 14)).pack(pady=10)
 
         self.params = []
-        labels = [
-            "Peso día preferido:",
-            "Peso mismo escritorio:",
-            "Peso uso de zonas:",
-            "Peso aislamiento:",
-            "Tiempo límite (segundos):",
-            "Desviación del óptimo (%):"
+        labels = [ "Peso día preferido:", "Peso mismo escritorio:", "Peso uso de zonas:", "Peso aislamiento:", "Tiempo límite (segundos):", "Desviación del óptimo (%):"
         ]
 
-        tooltips = [
-            "Favorece que los empleados trabajen los días que prefieren.",
-            "Favorece que un empleado conserve el mismo escritorio.",
-            "Favorece que un empleado trabaje en menos zonas.",
-            "Evita que un empleado quede aislado de su grupo.",
-            "Tiempo máximo para resolver el modelo.",
-            "Permite soluciones aproximadas para ganar velocidad."
+        tooltips = ["Importancia dada a que los empleados trabajen los días que prefieren, ingrese un valor > 1.", 
+                    "Importancia dada a que un empleado conserve el mismo escritorio toda la semana. Valor numérico", 
+                    "Importancia dada a que un equipo se reparta en el menor número de zonas. Valor numérico", 
+                    "Importancia dada a que un empleado no quede aislado del resto de su equipo si este se reparte en diferentes zonas. Valor numérico", 
+                    "Tiempo máximo para resolver el problema.", 
+                    "Permite soluciones aproximadas para ganar velocidad. Valor numérico"
         ]
 
         self.inputs = []
@@ -70,7 +59,7 @@ class SchedulerApp:
 
         tk.Label(
             self.root,
-            text="Deshabilitar restricciones puede afectar el tiempo de ejecución y la calidad de la solución.",
+            text="Habilitar restricciones aumenta el tiempo de ejecución a cambio de mejor calidad de la solución.",
             fg="red"
         ).pack(pady=5)
 
@@ -83,7 +72,7 @@ class SchedulerApp:
 
         archivos_json = [f for f in os.listdir("./data") if f.startswith("instance") and f.endswith(".json")]
         numeros_instancia = sorted([
-            f.replace("instance", "").replace(".json", "")
+            int(f.replace("instance", "").replace(".json", ""))
             for f in archivos_json
             if f.replace("instance", "").replace(".json", "").isdigit()
         ])
@@ -111,7 +100,7 @@ class SchedulerApp:
 
             var_chk = tk.IntVar()
             if i > 0:
-                chk = tk.Checkbutton(frame, text="Omitir", variable=var_chk, command=self.check_validity)
+                chk = tk.Checkbutton(frame, text="Habilitar", variable=var_chk, command=self.check_validity)
                 chk.grid(row=0, column=3, padx=5)
             self.check_vars.append(var_chk)
 
@@ -299,10 +288,7 @@ class SchedulerApp:
         def extraer_numero(texto):
             return int(''.join(filter(str.isdigit, texto)))
 
-        orden = {
-            "Empleado": lambda x: extraer_numero(x[0]),
-            "Escritorio": lambda x: extraer_numero(x[1]),
-            "Día": lambda x: orden_dias.get(x[2], 99)
+        orden = {"Empleado": lambda x: extraer_numero(x[0]), "Escritorio": lambda x: extraer_numero(x[1]), "Día": lambda x: orden_dias.get(x[2], 99)
         }
 
         try:
@@ -315,7 +301,7 @@ class SchedulerApp:
         self.result_area.delete("1.0", "end")
 
         for emp, desk, day in sorted_result:
-            self.result_area.insert("end", f"Empleado {emp} → Escritorio {desk} el día {day}\n")
+            self.result_area.insert("end", f"Empleado {emp}\t→\tEscritorio {desk} el día {day}\n")
 
         self.result_area.config(state="disabled")
 
