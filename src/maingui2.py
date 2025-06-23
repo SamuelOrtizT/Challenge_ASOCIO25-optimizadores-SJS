@@ -314,15 +314,26 @@ class SchedulerApp:
         sort_menu.pack(pady=5)
         sort_menu.bind("<<ComboboxSelected>>", lambda e: self.show_results())
 
-        frame = tk.Frame(self.root)
-        frame.pack(fill="both", expand=True, padx=10, pady=10)
+        # Contenedor principal para resultados + botón
+        content_frame = tk.Frame(self.root)
+        content_frame.pack(fill="both", expand=True, padx=10, pady=(0, 5))
 
-        self.result_area = tk.Text(frame, wrap="word")
-        scrollbar = tk.Scrollbar(frame, command=self.result_area.yview)
+        # Marco de resultados con scrollbar
+        frame_resultado = tk.Frame(content_frame)
+        frame_resultado.pack(fill="both", expand=True)
+
+        self.result_area = tk.Text(frame_resultado, wrap="word", height=15)
+        scrollbar = tk.Scrollbar(frame_resultado, command=self.result_area.yview)
         self.result_area.configure(yscrollcommand=scrollbar.set)
         self.result_area.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+        # Frame inferior con botón
+        frame_boton = tk.Frame(content_frame)
+        frame_boton.pack(fill="x", pady=10)
+        tk.Button(frame_boton, text="Volver al inicio", command=self.create_first_window).pack()
+
+        # Generar y mostrar asignaciones
         asignaciones = []
         for i in model.I:
             for j in model.J:
@@ -333,12 +344,11 @@ class SchedulerApp:
         self.resultados = asignaciones
         self.show_results()
 
-        tk.Button(self.root, text="Volver al inicio", command=self.create_first_window).pack(pady=10)
-
     def show_results(self):
         criterio = self.sort_var.get()
 
         orden_dias = {"L": 0, "Ma": 1, "Mi": 2, "J": 3, "V": 4}
+        dias_largos = {"L": "lunes", "Ma": "martes", "Mi": "miércoles", "J": "jueves", "V": "viernes"}
         def extraer_numero(texto):
             return int(''.join(filter(str.isdigit, texto)))
 
@@ -355,7 +365,7 @@ class SchedulerApp:
         self.result_area.delete("1.0", "end")
 
         for emp, desk, day in sorted_result:
-            self.result_area.insert("end", f"Empleado {emp}\t→\tEscritorio {desk} el día {day}\n")
+            self.result_area.insert("end", f"Empleado {emp}\t→\tEscritorio {desk} el día {dias_largos[day]}\n")
 
         self.result_area.config(state="disabled")
 
