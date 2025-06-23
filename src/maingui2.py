@@ -124,7 +124,7 @@ class SchedulerApp:
         # Validar que el campo "peso día preferido" (índice 0) tenga un número válido
         try:
             valor0 = self.inputs[0].get().strip().replace(",", ".")
-            if float(valor0) < 0:
+            if float(valor0) <= 0:
                 self.execute_button.config(state="disabled")
                 return
         except ValueError:
@@ -136,7 +136,7 @@ class SchedulerApp:
             if self.check_vars[i].get():  # Solo si está habilitado
                 valor = self.inputs[i].get().strip().replace(",", ".")
                 try:
-                    if float(valor) < 0:
+                    if float(valor) <= 0:
                         self.execute_button.config(state="disabled")
                         return
                 except ValueError:
@@ -149,14 +149,14 @@ class SchedulerApp:
     def run_model(self):
         try:
             num_instance = self.json_var.get()
-            nombre_archivo = f"instance{num_instance}.json"
-            ruta_json = os.path.join(".", "data", nombre_archivo)
+            ruta_json = os.path.join(".", "data", f"instance{num_instance}.json")
             peso_dia_preferido = float(self.inputs[0].get().replace(",", "."))
-            peso_mismo_escritorio = float(self.inputs[1].get().replace(",", "."))
-            peso_zonas = float(self.inputs[2].get().replace(",", "."))
-            peso_aislado = float(self.inputs[3].get().replace(",", "."))
-            tiempo_limite = int(float(self.inputs[4].get().replace(",", ".")))
-            gap = float(self.inputs[5].get().replace(",", "."))
+
+            peso_mismo_escritorio = float(self.inputs[1].get().replace(",", ".")) if self.check_vars[1].get() else 0
+            peso_zonas = float(self.inputs[2].get().replace(",", ".")) if self.check_vars[2].get() else 0
+            peso_aislado = float(self.inputs[3].get().replace(",", ".")) if self.check_vars[3].get() else 0
+            tiempo_limite = int(float(self.inputs[4].get().replace(",", "."))) if self.check_vars[4].get() else False
+            gap = float(self.inputs[5].get().replace(",", ".")) if self.check_vars[5].get() else False
 
             if not os.path.exists(ruta_json):
                 messagebox.showerror("Error", "El archivo JSON no existe.")
@@ -181,85 +181,123 @@ class SchedulerApp:
                 for esc in escritorios
             }
 
-            M = -99999
             model = ConcreteModel()
             model.I = RangeSet(0, len(empleados) - 1)
             model.J = RangeSet(0, len(escritorios) - 1)
             model.K = Set(initialize=dias)
-            model.G = Set(initialize=grupos)
-            model.Z = Set(initialize=zonas)
             model.x = Var(model.I, model.J, model.K, within=Binary)
-            model.y = Var([(i, j) for i in model.I for j in model.J if f"D{j}" in escritoriosXempleados[f"E{i}"]], domain=Binary)
+            model.G = Set(initialize=grupos)
             model.g = Var(model.G, model.K, domain=Binary)
-            model.z = Var(model.G, model.Z, domain=Binary)
-            model.miembros_en_zona = Var(model.G, model.Z, within=NonNegativeIntegers)
-            model.aislado = Var(model.G, model.Z, domain=Binary)
 
             C = {
                 (int(emp[1:]), int(desk[1:]), day): (
                     peso_dia_preferido if desk in escritoriosXempleados[emp] and day in empleadosXdias[emp]
-                    else 1 if desk in escritoriosXempleados[emp]
-                    else M
+                    else 1
                 )
                 for emp in empleados
-                for desk in escritorios
+                for desk in escritoriosXempleados[emp]  # solo escritorios permitidos
                 for day in dias
             }
 
+            #modelado de restricciones
+            def un_escritorio_por_dia(m, i, k):
+                return sum(m.x[i, j, k] for j in m.J) <= 1
+
+            def un_empleado_por_escritorio(m, j, k):
+                return sum(m.x[i, j, k] for i in m.I) <= 1
+
+            def dias_trabajados_por_empleado(m, i):
+                return inequality(2, sum(m.x[i, j, k] for j in m.J for k in m.K), 3)
+            
+            def un_dia_por_grupo(m, grupo):
+                return sum(m.g[grupo, k] for k in m.K) == 1
+            
+            if peso_mismo_escritorio:
+                model.y = Var([(i, j) for i in model.I for j in model.J if f"D{j}" in escritoriosXempleados[f"E{i}"]], domain=Binary)
+                # Relación entre x e y: si x[i,j,k] = 1 en algún k → y[i,j] = 1
+                def activar_y(m, i, j, k):
+                    if (i, j) in m.y.index_set():
+                        return m.x[i, j, k] <= m.y[i, j]
+                    return Constraint.Skip
+                model.restriccion_activar_y = Constraint(model.I, model.J, model.K, rule=activar_y)
+
+            if peso_zonas:
+                model.Z = Set(initialize=zonas)
+                model.z = Var(model.G, model.Z, domain=Binary)
+                model.restriccion_zona_usada = ConstraintList()
+                for grupo, empleados in gruposXempleados.items():
+                    for e in empleados:
+                        i = int(e[1:])
+                        escritorios_validos = escritoriosXempleados[f"E{i}"]
+                        for esc in escritorios_validos:
+                            j = int(esc[1:])
+                            zona = escritorioXzona[esc]
+                            for k in model.K:
+                                model.restriccion_zona_usada.add(
+                                    model.x[i, j, k] <= model.z[grupo, zona]
+                                )
+            
+            if peso_aislado:
+                model.miembros_en_zona = Var(model.G, model.Z, within=NonNegativeIntegers)
+                model.aislado = Var(model.G, model.Z, domain=Binary)
+                model.restriccion_conteo_miembros = ConstraintList()
+                model.restriccion_aislamiento = ConstraintList()
+                for g in model.G:
+                    for z in model.Z:
+                        model.restriccion_aislamiento.add(model.miembros_en_zona[g, z] >= model.aislado[g, z])
+                        model.restriccion_aislamiento.add(model.miembros_en_zona[g, z] <= model.aislado[g, z] + (len(gruposXempleados[g]) - 1)*(1 - model.aislado[g, z]))
+                for grupo, empleados in gruposXempleados.items():
+                    for zona in model.Z:
+                        sum_terms = []
+                        for e in empleados:
+                            i = int(e[1:])
+                            valid_escritorios = escritoriosXempleados.get(f"E{i}", [])
+                            for esc in valid_escritorios:
+                                if escritorioXzona[esc] != zona:
+                                    continue  # ignorar escritorios fuera de esta zona
+                                j = int(esc[1:])
+                                for k in model.K:
+                                    sum_terms.append(model.x[i, j, k])
+                        if sum_terms:
+                            model.restriccion_conteo_miembros.add(
+                                model.miembros_en_zona[grupo, zona] == sum(sum_terms)
+                            )
+                        else:
+                            model.restriccion_conteo_miembros.add(model.miembros_en_zona[grupo, zona] == 0)
+
+            
+            model.restriccion_asignacion = Constraint(model.I, model.K, rule=un_escritorio_por_dia)
+            model.restriccion_ocupacion = Constraint(model.J, model.K, rule=un_empleado_por_escritorio)
+            model.restriccion_dias_min_max = Constraint(model.I, rule=dias_trabajados_por_empleado)
+            model.restriccion_grupo_un_dia = Constraint(model.G, rule=un_dia_por_grupo)
+            model.restriccion_asistencia_grupal = ConstraintList()
+            for grupo, empleados in gruposXempleados.items():
+                for k in model.K:
+                    for e in empleados:
+                        i = int(e[1:])  # "E0" → 0
+                        model.restriccion_asistencia_grupal.add(
+                            sum(model.x[i, j, k] for j in model.J if f"D{j}" in escritoriosXempleados[f"E{i}"]) >= model.g[grupo, k]
+                        )
+
+            model.idxC = Set(initialize=C.keys())
+
             def objetivo(m):
-                a = sum(C[(i, j, k)] * m.x[i, j, k] for i in m.I for j in m.J for k in m.K)
-                b = sum(m.y[i, j] for (i, j) in m.y.index_set())
-                c = sum(m.z[g, z] for g in m.G for z in m.Z)
-                d = sum(m.aislado[g, z] for g in m.G for z in m.Z)
-                return a - peso_mismo_escritorio * b - peso_zonas * c - peso_aislado * d
+                asignacion = sum(C[(i, j, k)] * m.x[i, j, k] for (i, j, k) in m.idxC)
+                consistencia_escritorios = sum(m.y[i, j] for (i, j) in m.y.index_set()) if peso_mismo_escritorio else 0
+                penalizacion_por_zonas = sum(m.z[g, z] for g in m.G for z in m.Z) if peso_zonas else 0
+                penalizacion_aislamiento = sum(model.aislado[g, z] for g in model.G for z in model.Z) if peso_aislado else 0
+                return asignacion - peso_mismo_escritorio * consistencia_escritorios - peso_zonas * penalizacion_por_zonas - peso_aislado * penalizacion_aislamiento
 
             model.obj = Objective(rule=objetivo, sense=maximize)
 
-            model.restriccion_activar_y = Constraint(model.I, model.J, model.K, rule=lambda m, i, j, k: m.x[i, j, k] <= m.y[i, j] if (i, j) in m.y.index_set() else Constraint.Skip)
-            model.restriccion_asignacion = Constraint(model.I, model.K, rule=lambda m, i, k: sum(m.x[i, j, k] for j in m.J) <= 1)
-            model.restriccion_ocupacion = Constraint(model.J, model.K, rule=lambda m, j, k: sum(m.x[i, j, k] for i in m.I) <= 1)
-            model.restriccion_dias = Constraint(model.I, rule=lambda m, i: inequality(2, sum(m.x[i, j, k] for j in m.J for k in m.K), 3))
-            model.restriccion_grupo = Constraint(model.G, rule=lambda m, g: sum(m.g[g, k] for k in m.K) == 1)
-            model.restriccion_asistencia_grupal = ConstraintList()
-            model.restriccion_zona_usada = ConstraintList()
-            model.restriccion_conteo_miembros = ConstraintList()
-            model.restriccion_aislamiento = ConstraintList()
-
-            for g in model.G:
-                for z in model.Z:
-                    model.restriccion_aislamiento.add(model.miembros_en_zona[g, z] >= model.aislado[g, z])
-                    model.restriccion_aislamiento.add(model.miembros_en_zona[g, z] <= model.aislado[g, z] + (len(gruposXempleados[g]) - 1)*(1 - model.aislado[g, z]))
-
-            for g, emps in gruposXempleados.items():
-                for k in model.K:
-                    for e in emps:
-                        i = int(e[1:])
-                        model.restriccion_asistencia_grupal.add(sum(model.x[i, j, k] for j in model.J if f"D{j}" in escritoriosXempleados[f"E{i}"]) >= model.g[g, k])
-
-            for g, emps in gruposXempleados.items():
-                for e in emps:
-                    i = int(e[1:])
-                    for esc in escritoriosXempleados[f"E{i}"]:
-                        j = int(esc[1:])
-                        zona = escritorioXzona[esc]
-                        for k in model.K:
-                            model.restriccion_zona_usada.add(model.x[i, j, k] <= model.z[g, zona])
-
-            for g, emps in gruposXempleados.items():
-                for z in model.Z:
-                    terms = []
-                    for e in emps:
-                        i = int(e[1:])
-                        for esc in escritoriosXempleados[f"E{i}"]:
-                            if escritorioXzona[esc] == z:
-                                j = int(esc[1:])
-                                for k in model.K:
-                                    terms.append(model.x[i, j, k])
-                    model.restriccion_conteo_miembros.add(model.miembros_en_zona[g, z] == sum(terms) if terms else 0)
-
             cbc_path = os.path.join(os.path.dirname(__file__), "solvers", "cbc.exe")
             solver = SolverFactory("cbc", executable=cbc_path)
-            result = solver.solve(model, tee=False, options={'seconds': tiempo_limite, 'ratio': gap / 100})
+            options = {}
+            if tiempo_limite:
+                options['seconds'] = tiempo_limite
+            if gap:
+                options['ratio'] = gap / 100
+            result = solver.solve(model, tee=False, options=options)
             self.create_third_window(model,result)
 
         except Exception as e:
