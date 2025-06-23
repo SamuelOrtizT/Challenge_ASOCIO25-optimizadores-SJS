@@ -42,7 +42,8 @@ class SchedulerApp:
         tk.Label(self.root, text="Parámetros del modelo", font=("Helvetica", 14)).pack(pady=10)
 
         self.params = []
-        labels = [ "Peso día preferido:", "Peso mismo escritorio:", "Peso uso de zonas:", "Peso aislamiento:", "Tiempo límite (segundos):", "Desviación del óptimo (%):"
+        labels = ["Peso día preferido:", "Peso mismo escritorio:", "Peso uso de zonas:", "Peso aislamiento:", 
+                  "Tiempo límite (segundos):", "Desviación del óptimo (%):"
         ]
 
         tooltips = ["Importancia dada a que los empleados trabajen los días que prefieren, ingrese un valor > 1.", 
@@ -55,7 +56,6 @@ class SchedulerApp:
 
         self.inputs = []
         self.check_vars = []
-        self.valid = [False] * len(labels)
 
         tk.Label(
             self.root,
@@ -76,13 +76,8 @@ class SchedulerApp:
             for f in archivos_json
             if f.replace("instance", "").replace(".json", "").isdigit()
         ])
-        self.json_combobox['values'] = numeros_instancia
-
-        def validate_json_selection(*args):
-            self.valid[0] = self.json_var.get() in numeros_instancia
-            self.check_validity()
-
-        self.json_var.trace_add("write", validate_json_selection)
+        self.json_combobox['values'] = [str(n) for n in numeros_instancia]
+        self.json_var.trace_add("write", lambda *args: self.check_validity())
 
         for i, label in enumerate(labels):
             frame = tk.Frame(self.root)
@@ -94,41 +89,62 @@ class SchedulerApp:
             var = tk.StringVar()
             entry = tk.Entry(frame, textvariable=var, width=10)
             entry.grid(row=0, column=1, padx=5)
+            self.inputs.append(var)
 
             btn = tk.Button(frame, text="?", width=2, command=lambda i=i: messagebox.showinfo("Explicación", tooltips[i]))
             btn.grid(row=0, column=2, padx=5)
 
             var_chk = tk.IntVar()
             if i > 0:
-                chk = tk.Checkbutton(frame, text="Habilitar", variable=var_chk, command=self.check_validity)
-                chk.grid(row=0, column=3, padx=5)
-            self.check_vars.append(var_chk)
+                entry.config(state="disabled")
 
-            self.inputs.append(var)
-
-            def validate(i=i, v=var):
-                def inner(*args):
-                    try:
-                        val = float(v.get().replace(",", "."))
-                        self.valid[i] = val >= 0 or (i != 1 and self.check_vars[i - 1].get())
-                    except:
-                        self.valid[i] = (i != 1 and self.check_vars[i - 1].get())
+                def toggle_entry(i=i, entry=entry, var=var, chk_var=var_chk):
+                    if chk_var.get():
+                        entry.config(state="normal")
+                    else:
+                        entry.config(state="disabled")
+                        var.set("")  # Borrar contenido
                     self.check_validity()
-                return inner
 
-            var.trace_add("write", validate())
+                chk = tk.Checkbutton(frame, text="Habilitar", variable=var_chk, command=toggle_entry)
+                chk.grid(row=0, column=3, padx=5)
+
+            self.check_vars.append(var_chk)
+            var.trace_add("write", lambda *args, v=var: self.check_validity())
 
         self.execute_button = tk.Button(self.root, text="Ejecutar modelo", command=self.run_model, state="disabled")
         self.execute_button.pack(pady=20)
 
     def check_validity(self):
-        for i in range(1, len(self.valid)):
-            if i != 1 and self.check_vars[i - 1].get():
-                self.valid[i] = True
-        if all(self.valid):
-            self.execute_button.config(state="normal")
-        else:
+        # Validar que se haya seleccionado un JSON válido
+        if self.json_var.get() not in self.json_combobox['values']:
             self.execute_button.config(state="disabled")
+            return
+
+        # Validar que el campo "peso día preferido" (índice 0) tenga un número válido
+        try:
+            valor0 = self.inputs[0].get().strip().replace(",", ".")
+            if float(valor0) < 0:
+                self.execute_button.config(state="disabled")
+                return
+        except ValueError:
+            self.execute_button.config(state="disabled")
+            return
+
+        # Validar que todos los campos habilitados tengan números válidos
+        for i in range(1, len(self.inputs)):
+            if self.check_vars[i].get():  # Solo si está habilitado
+                valor = self.inputs[i].get().strip().replace(",", ".")
+                try:
+                    if float(valor) < 0:
+                        self.execute_button.config(state="disabled")
+                        return
+                except ValueError:
+                    self.execute_button.config(state="disabled")
+                    return
+
+        # Si todo está bien, habilitar el botón
+        self.execute_button.config(state="normal")
 
     def run_model(self):
         try:
