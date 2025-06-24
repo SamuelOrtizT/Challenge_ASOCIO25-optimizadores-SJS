@@ -5,5 +5,7 @@ Juan Sebastián Hoyos Castillo,
 Samuel Ortiz Toro y
 Jhon Edison Pinto Hincapié
 
-### Requisitos
-tener instalada la libreria pyomo
+### Instalación
+Para ejecutar el programa, ingrese a https://github.com/SamuelOrtizT/Challenge_ASOCIO25-optimizadores-SJS/releases/tag/v1.0.0 
+descargue App.zip, descomprima los archivos y dele doble click a main.exe, y listo!!!
+estará disfrutando de está aplicación diseñada para competir en el reto ASOCIO 2025
