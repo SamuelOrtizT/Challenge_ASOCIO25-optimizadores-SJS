@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os
+import sys
 import json
 from pyomo.environ import *
 
@@ -290,7 +291,11 @@ class SchedulerApp:
 
             model.obj = Objective(rule=objetivo, sense=maximize)
 
-            cbc_path = os.path.join(os.path.dirname(__file__), "solvers", "cbc.exe")
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            if getattr(sys, 'frozen', False):
+                base_dir = os.getcwd()
+
+            cbc_path = os.path.join(base_dir, "solvers", "cbc.exe")
             solver = SolverFactory("cbc", executable=cbc_path)
             options = {}
             if tiempo_limite:
