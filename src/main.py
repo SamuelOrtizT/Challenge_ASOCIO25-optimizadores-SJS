@@ -180,19 +180,11 @@ class SchedulerApp:
                 for zona, escritorios in zonasXescritorios.items()
                 for esc in escritorios
             }
-            valid_x = [(int(emp[1:]), int(desk[1:]), day)
-                for emp in empleados
-                for desk in escritoriosXempleados[emp]
-                for day in dias]
-            valid_y = [(int(emp[1:]), int(desk[1:]))
-                for emp in empleados
-                for desk in escritoriosXempleados[emp]]
 
             model = ConcreteModel()
             model.I = RangeSet(0, len(empleados) - 1)
             model.J = RangeSet(0, len(escritorios) - 1)
             model.K = Set(initialize=dias)
-            #model.idxC = Set(initialize=valid_x, dimen=3)
             model.x = Var(model.I, model.J, model.K, within=Binary)
             model.G = Set(initialize=grupos)
             model.g = Var(model.G, model.K, domain=Binary)
@@ -274,7 +266,6 @@ class SchedulerApp:
                         else:
                             model.restriccion_conteo_miembros.add(model.miembros_en_zona[grupo, zona] == 0)
 
-            
             model.restriccion_asignacion = Constraint(model.I, model.K, rule=un_escritorio_por_dia)
             model.restriccion_ocupacion = Constraint(model.J, model.K, rule=un_empleado_por_escritorio)
             model.restriccion_dias_min_max = Constraint(model.I, rule=dias_trabajados_por_empleado)
@@ -355,7 +346,6 @@ class SchedulerApp:
 
         self.resultados = asignaciones
         self.show_results()
-        print(f"Resultado objetivo: {value(model.obj)}")
 
     def show_results(self):
         criterio = self.sort_var.get()
