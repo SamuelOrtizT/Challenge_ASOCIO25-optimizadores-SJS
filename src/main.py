@@ -4,6 +4,7 @@
 
 import json
 import os
+import time
 from pyomo.environ import *
 
 text1 = "Ingrese el número del JSON que desea usar: "
@@ -42,7 +43,6 @@ escritorioXzona = {
 }
 
 #Inicializar modelo
-M = -99999
 model = ConcreteModel()
 model.I = RangeSet(0, len(empleados) - 1)
 model.J = RangeSet(0, len(escritorios) - 1)
@@ -58,19 +58,18 @@ model.aislado = Var(model.G, model.Z, domain=Binary)
 
 #Llenar diccionario con el peso de cada variable de decisión
 C = {
-    (int(empleado[1:]), int(escritorio[1:]), dia): (
-        peso_dia_preferido if escritorio in escritoriosXempleados[empleado] and dia in empleadosXdias[empleado]
-        else 1 if escritorio in escritoriosXempleados[empleado]
-        else M
+    (int(emp[1:]), int(desk[1:]), day): (
+        peso_dia_preferido if desk in escritoriosXempleados[emp] and day in empleadosXdias[emp]
+        else 1
     )
-    for empleado in empleados
-    for escritorio in escritorios
-    for dia in dias
+    for emp in empleados
+    for desk in escritoriosXempleados[emp]  # solo escritorios permitidos
+    for day in dias
 }
-
+model.idxC = Set(initialize=C.keys())
 #definir función objetivo
 def funcion_objetivo(m):
-    asignacion = sum(C[(i, j, k)] * m.x[i, j, k] for i in m.I for j in m.J for k in m.K)
+    asignacion = sum(C[(i, j, k)] * m.x[i, j, k] for (i, j, k) in m.idxC)
     consistencia_escritorios = sum(m.y[i, j] for (i, j) in m.y.index_set())
     penalizacion_por_zonas = sum(m.z[g, z] for g in m.G for z in m.Z)
     penalizacion_aislamiento = sum(model.aislado[g, z] for g in model.G for z in model.Z)
@@ -154,10 +153,12 @@ for grupo, empleados in gruposXempleados.items():
 
 # Resolver con cbc
 cbc_path = os.path.join(os.path.dirname(__file__), "solvers", "cbc.exe")  # Ruta al ejecutable dentro del proyecto
-
 solver = SolverFactory("cbc", executable=cbc_path)
-result = solver.solve(model, tee=True, options={'seconds': tiempo_limite, 'ratio': gap / 100})
+start_time = time.time()
+result = solver.solve(model, tee=False, options={'seconds': tiempo_limite, 'ratio': gap / 100})
+end_time = time.time()
 
+print(f"Tiempo total de resolución: {end_time - start_time:.2f} segundos")
 print(f"Estado de la solución: {result.solver.status}")
 print(f"Resultado objetivo: {value(model.obj)}")
 

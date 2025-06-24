@@ -297,7 +297,10 @@ class SchedulerApp:
                 options['seconds'] = tiempo_limite
             if gap:
                 options['ratio'] = gap / 100
-            result = solver.solve(model, tee=False, options=options)
+            if options:
+                result = solver.solve(model, tee=False, options=options)
+            else:
+                result = solver.solve(model, tee=False)
             self.create_third_window(model,result)
 
         except Exception as e:
@@ -343,6 +346,7 @@ class SchedulerApp:
 
         self.resultados = asignaciones
         self.show_results()
+        print(f"Resultado objetivo: {value(model.obj)}")
 
     def show_results(self):
         criterio = self.sort_var.get()
