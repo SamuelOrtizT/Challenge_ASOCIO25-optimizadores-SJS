@@ -235,7 +235,7 @@ class SchedulerApp:
                             j = int(esc[1:])
                             zona = escritorioXzona[esc]
                             for k in model.K:
-                                model.r_zona_usada.add(
+                                model.restriccion_zona_usada.add(
                                 model.x[i, j, k] <= model.z[grupo, zona] + (1 - model.g[grupo, k])
                             )
             
