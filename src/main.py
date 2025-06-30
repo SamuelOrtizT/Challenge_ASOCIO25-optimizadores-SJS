@@ -211,7 +211,7 @@ class SchedulerApp:
                 return inequality(2, sum(m.x[i, j, k] for j in m.J for k in m.K), 3)
             
             def un_dia_por_grupo(m, grupo):
-                return sum(m.g[grupo, k] for k in m.K) >= 1
+                return sum(m.g[grupo, k] for k in m.K) == 1
             
             if peso_mismo_escritorio:
                 #model.y = Var(valid_y, domain=Binary)
@@ -236,8 +236,8 @@ class SchedulerApp:
                             zona = escritorioXzona[esc]
                             for k in model.K:
                                 model.restriccion_zona_usada.add(
-                                model.x[i, j, k] <= model.z[grupo, zona] + (1 - model.g[grupo, k])
-                            )
+                                    model.x[i, j, k] <= model.z[grupo, zona]
+                                )
             
             if peso_aislado:
                 model.miembros_en_zona = Var(model.G, model.Z, within=NonNegativeIntegers)
@@ -259,7 +259,7 @@ class SchedulerApp:
                                     continue  # ignorar escritorios fuera de esta zona
                                 j = int(esc[1:])
                                 for k in model.K:
-                                    sum_terms.append(model.x[i, j, k] * model.g[grupo, k])
+                                    sum_terms.append(model.x[i, j, k])
                         if sum_terms:
                             model.restriccion_conteo_miembros.add(
                                 model.miembros_en_zona[grupo, zona] == sum(sum_terms)
